@@ -405,10 +405,11 @@
         let audioChunks = [];
         let currentScore = 0;
         let targetChar = '';
-        let activeStream = null;
         let currentlyRecordingChar = null;
         let isInteractionLocked = false;
-        let currentAudio = null;
+        
+        // Single persistent audio player for better iOS compatibility
+        const audioPlayer = new Audio();
 
         // --- Database Logic ---
         async function initDB() {
@@ -491,22 +492,23 @@
             const startBtn = document.getElementById('start-game-btn');
             if (pool.length >= 2) {
                 startBtn.disabled = false;
-                startBtn.innerText = `Start Game (${pool.length} letters)`;
+                startBtn.innerText = `Start Game (${pool.length})`;
             } else {
                 startBtn.disabled = true;
-                startBtn.innerText = 'Select at least 2 letters';
+                startBtn.innerText = 'Select at least 2';
             }
             CHARS.forEach(char => {
                 const item = document.getElementById(`item-${char}`);
                 if (!item) return;
                 const checkbox = item.querySelector('.enabled-checkbox');
+                const btn = document.getElementById(`btn-${char}`);
                 if (recordings[char]) {
                     item.classList.add('recorded');
-                    document.getElementById(`btn-${char}`).innerHTML = ICON_MIC;
+                    if (currentlyRecordingChar !== char) btn.innerHTML = ICON_MIC;
                     checkbox.checked = enabledChars.has(char);
                 } else {
                     item.classList.remove('recorded');
-                    document.getElementById(`btn-${char}`).innerHTML = ICON_MIC;
+                    if (currentlyRecordingChar !== char) btn.innerHTML = ICON_MIC;
                 }
             });
         }
@@ -551,83 +553,95 @@
         }
 
         // --- Audio Logic ---
-        async function getStream() {
-            if (activeStream && activeStream.active) return activeStream;
-            activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            return activeStream;
+        async function requestMicPermission() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream.getTracks().forEach(track => track.stop());
+            } catch (err) {
+                console.warn('Mic permission error:', err);
+            }
         }
 
         async function toggleRecording(char) {
             if (currentlyRecordingChar === char) {
-                stopRecording();
+                await stopRecording();
             } else {
-                if (currentlyRecordingChar) stopRecording();
-                startRecording(char);
+                if (currentlyRecordingChar) await stopRecording();
+                await startRecording(char);
             }
         }
 
         async function startRecording(char) {
             try {
-                const stream = await getStream();
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 const mimeType = MediaRecorder.isTypeSupported('audio/webm; codecs=opus') ? 'audio/webm; codecs=opus' : 'audio/mp4';
+                
                 mediaRecorder = new MediaRecorder(stream, { mimeType });
                 audioChunks = [];
                 currentlyRecordingChar = char;
+                
                 mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
                 mediaRecorder.onstop = async () => {
                     const blob = new Blob(audioChunks, { type: mimeType });
                     await saveRecording(char, blob);
                     if (recordings[char]) URL.revokeObjectURL(recordings[char]);
                     recordings[char] = URL.createObjectURL(blob);
+                    
                     if (!enabledChars.has(char)) {
                         enabledChars.add(char);
                         await saveSettings();
                     }
+                    
+                    stream.getTracks().forEach(track => track.stop());
                     updateUI();
                 };
+                
                 mediaRecorder.start();
                 document.getElementById(`item-${char}`).classList.add('recording');
                 document.getElementById(`btn-${char}`).innerHTML = ICON_STOP;
             } catch (err) {
                 alert('Microphone error: ' + err.message);
-            }
-        }
-
-        function stopRecording() {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
-                const char = currentlyRecordingChar;
-                document.getElementById(`item-${char}`).classList.remove('recording');
-                document.getElementById(`btn-${char}`).innerHTML = ICON_MIC;
                 currentlyRecordingChar = null;
             }
         }
 
-        function playSound(char, onEndCallback) {
-            if (recordings[char]) {
-                if (currentAudio) {
-                    currentAudio.pause();
-                    currentAudio.onended = null;
-                }
-                currentAudio = new Audio(recordings[char]);
-                const playBtn = document.getElementById('play-target-btn');
-                if (playBtn) playBtn.classList.add('playing');
-                
-                currentAudio.onended = () => {
-                    if (playBtn) playBtn.classList.remove('playing');
-                    currentAudio = null;
-                    if (onEndCallback) onEndCallback();
-                };
-                currentAudio.play();
+        async function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                return new Promise((resolve) => {
+                    const oldOnStop = mediaRecorder.onstop;
+                    mediaRecorder.onstop = async () => {
+                        await oldOnStop();
+                        currentlyRecordingChar = null;
+                        resolve();
+                    };
+                    mediaRecorder.stop();
+                });
             }
+        }
+
+        function playSound(char, onEndCallback) {
+            if (!recordings[char]) return;
+
+            audioPlayer.pause();
+            audioPlayer.src = recordings[char];
+            audioPlayer.load(); 
+            
+            const playBtn = document.getElementById('play-target-btn');
+            if (playBtn) playBtn.classList.add('playing');
+            
+            audioPlayer.onended = () => {
+                if (playBtn) playBtn.classList.remove('playing');
+                if (onEndCallback) onEndCallback();
+            };
+
+            audioPlayer.play().catch(err => {
+                console.warn("Playback error:", err);
+                if (playBtn) playBtn.classList.remove('playing');
+            });
         }
 
         // --- Game Logic ---
         function startGame() {
-            if (activeStream) {
-                activeStream.getTracks().forEach(track => track.stop());
-                activeStream = null;
-            }
             document.body.classList.add('playing');
             currentScore = 0;
             updateProgress();
@@ -659,7 +673,7 @@
                 grid.appendChild(btn);
             });
 
-            setTimeout(() => playSound(targetChar), 500);
+            setTimeout(() => playSound(targetChar), 600);
         }
 
         function handleChoice(char, btn) {
@@ -685,7 +699,7 @@
             } else {
                 btn.classList.add('wrong');
                 showFeedback('wrong');
-                playSound(targetChar); // Repeat sound to help
+                playSound(targetChar); 
                 setTimeout(() => {
                     btn.classList.remove('wrong');
                     hideFeedback();
@@ -695,7 +709,8 @@
 
         function showFeedback(type) {
             hideFeedback();
-            document.getElementById(`feedback-${type}`).style.display = 'block';
+            const el = document.getElementById(`feedback-${type}`);
+            if (el) el.style.display = 'block';
         }
 
         function hideFeedback() {
@@ -704,30 +719,30 @@
 
         function updateProgress() {
             const bar = document.getElementById('progress-bar');
-            bar.style.width = (currentScore / WIN_SCORE) * 100 + '%';
+            if (bar) bar.style.width = (currentScore / WIN_SCORE) * 100 + '%';
         }
 
         function playCelebrateSound() {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
-            
-            notes.forEach((freq, i) => {
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const notes = [523.25, 659.25, 783.99, 1046.50]; 
                 
-                osc.type = 'triangle';
-                osc.frequency.value = freq;
-                
-                gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.1);
-                gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + i * 0.1 + 0.05);
-                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.1 + 0.4);
-                
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                
-                osc.start(ctx.currentTime + i * 0.1);
-                osc.stop(ctx.currentTime + i * 0.1 + 0.5);
-            });
+                notes.forEach((freq, i) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.1);
+                    gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + i * 0.1 + 0.05);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.1 + 0.4);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(ctx.currentTime + i * 0.1);
+                    osc.stop(ctx.currentTime + i * 0.1 + 0.5);
+                });
+            } catch (e) {
+                console.warn("Celebration sound failed", e);
+            }
         }
 
         function celebrate() {
@@ -765,7 +780,7 @@
             createSetupItems();
             await initDB();
             await loadData();
-            await getStream();
+            await requestMicPermission();
 
             document.getElementById('start-game-btn').onclick = startGame;
             document.getElementById('play-target-btn').onclick = () => {
@@ -773,7 +788,6 @@
             };
             document.getElementById('back-to-setup').onclick = () => {
                 document.body.classList.remove('playing');
-                getStream();
                 showScreen('setup-screen');
             };
         };
