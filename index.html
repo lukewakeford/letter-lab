@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Letter Lab</title>
+    <style>
+        :root {
+            --bg: #f0f4f8;
+            --container-bg: white;
+            --primary: #4a90e2;
+            --secondary: #f39c12;
+            --success: #2ecc71;
+            --danger: #e74c3c;
+            --text: #333;
+            --text-muted: #666;
+            --border: #eee;
+            --grid-bg: #f9f9f9;
+            --card-bg: white;
+            --btn-recorded: #eee;
+            --btn-recorded-text: #666;
+            --btn-recorded-svg: #666;
+            --input-bg: white;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #1a1a2e;
+                --container-bg: #16213e;
+                --primary: #4ecca3;
+                --secondary: #f39c12;
+                --success: #2ecc71;
+                --danger: #e94560;
+                --text: #eeeeee;
+                --text-muted: #a2a2a2;
+                --border: #0f3460;
+                --grid-bg: #1a1a2e;
+                --card-bg: #0f3460;
+                --btn-recorded: #1a1a2e;
+                --btn-recorded-text: #a2a2a2;
+                --btn-recorded-svg: #a2a2a2;
+                --input-bg: #16213e;
+            }
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            min-height: 100dvh;
+            overflow-x: hidden;
+            transition: background-color 0.3s ease;
+            touch-action: manipulation; /* Prevents double-tap zoom */
+        }
+
+        .container {
+            width: 95%;
+            max-width: 1200px;
+            background: var(--container-bg);
+            padding: clamp(1rem, 3vw, 2.5rem);
+            border-radius: 40px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+            text-align: center;
+            margin: 40px auto;
+            transition: background-color 0.3s ease;
+            position: relative;
+        }
+
+        /* Full-screen playing mode */
+        body.playing { overflow: hidden; padding: 0; background: var(--container-bg); }
+        body.playing .container { 
+            height: 100vh; 
+            height: 100dvh; 
+            width: 100vw; 
+            max-width: 100vw; 
+            margin: 0; 
+            border-radius: 0; 
+            display: flex;
+            flex-direction: column;
+            padding: 1.5rem;
+            box-shadow: none;
+        }
+
+        /* Sticky Header Logic */
+        .sticky-header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--container-bg);
+            padding: 2rem 0;
+            margin: -2.5rem 0 1rem 0;
+            border-bottom: 2px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.3s ease;
+        }
+
+        @supports (padding-top: env(safe-area-inset-top)) {
+            .sticky-header {
+                top: env(safe-area-inset-top);
+                padding-top: calc(2rem + env(safe-area-inset-top));
+                margin-top: calc(-2.5rem - env(safe-area-inset-top));
+            }
+        }
+
+        .header-content { text-align: left; }
+        .header-content h1 { margin: 0; }
+        .header-content p { margin: 0.2rem 0 0 0; }
+
+        h1 { color: var(--primary); font-size: clamp(1.5rem, 4vw, 2.5rem); }
+        p { font-size: clamp(0.8rem, 1.5vw, 1.1rem); color: var(--text-muted); }
+
+        .screen { display: none; }
+        .screen.active { display: block; }
+        #game-screen.active { display: flex; flex-direction: column; height: 100%; width: 100%; }
+
+        /* Setup Screen */
+        .record-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+            padding: 10px;
+        }
+
+        @media (max-width: 600px) {
+            .sticky-header {
+                flex-direction: column;
+                gap: 1rem;
+                text-align: center;
+                top: -1rem;
+            }
+            .header-content { text-align: center; }
+            #start-game-btn { width: 100%; }
+        }
+
+        .record-item {
+            padding: 1rem;
+            border: 2px solid var(--border);
+            border-radius: 20px;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            align-items: center;
+            background: var(--card-bg);
+            position: relative;
+        }
+
+        .record-item.recorded { border-color: var(--success); }
+        @media (prefers-color-scheme: light) {
+            .record-item.recorded { background: #f0fff4; }
+        }
+        
+        .record-item.recording { border-color: var(--danger); background: var(--bg); animation: borderPulse 1s infinite; }
+        
+        @keyframes borderPulse {
+            0% { border-color: var(--danger); box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4); }
+            70% { border-color: #ff0000; box-shadow: 0 0 0 10px rgba(231, 76, 60, 0); }
+            100% { border-color: var(--danger); box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+        }
+
+        .char-display { font-size: 2.5rem; font-weight: bold; color: var(--primary); line-height: 1; }
+
+        .btn-group { display: flex; gap: 0.3rem; width: 100%; }
+        .btn-group button { 
+            flex: 1; 
+            padding: 0.5rem; 
+            border-radius: 10px; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+        }
+
+        .record-btn { 
+            background: var(--danger); 
+            width: 100%; 
+            padding: 0.8rem; 
+            border-radius: 15px; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center;
+        }
+
+        button svg { width: 24px; height: 24px; fill: white; }
+        .record-btn svg { width: 32px; height: 32px; }
+        .recorded .record-btn svg { fill: var(--btn-recorded-svg); }
+
+        .play-btn { background: var(--success); display: none; }
+        .delete-btn { background: #999; display: none; }
+
+        .recorded .play-btn, .recorded .delete-btn { display: block; }
+        .recorded .record-btn { background: var(--btn-recorded); color: var(--btn-recorded-text); }
+
+        .enabled-toggle {
+            display: none;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+            margin-top: 0.3rem;
+            color: var(--text-muted);
+        }
+        .recorded .enabled-toggle { display: flex; }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.8rem 1.5rem;
+            border-radius: 12px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            -webkit-tap-highlight-color: transparent;
+            font-weight: 600;
+        }
+        
+        button:hover { filter: brightness(1.1); }
+        button:active { transform: scale(0.95); }
+        button:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+
+        #start-game-btn { font-size: 1.5rem; padding: 1.2rem 3rem; margin-top: 1rem; box-shadow: 0 8px 20px rgba(0,0,0,0.2); }
+
+        /* Game Screen Layout */
+        .game-layout {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-evenly;
+            align-items: center;
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .progress-container {
+            width: 100%;
+            height: 20px;
+            background: var(--border);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+            flex-shrink: 0;
+        }
+
+        #progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #2ecc71, #58d68d);
+            transition: width 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .game-header {
+            height: 80px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .feedback-icon {
+            font-size: 5rem;
+            display: none;
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0); }
+            70% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+
+        .play-sound-btn {
+            font-size: clamp(3rem, 12vh, 6rem);
+            background: var(--secondary);
+            width: clamp(120px, 20vh, 180px);
+            height: clamp(120px, 20vh, 180px);
+            border-radius: 50%;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.3);
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            border: 6px solid var(--container-bg);
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .play-sound-btn.playing { animation: pulseIcon 0.5s infinite alternate; border-color: var(--secondary); }
+
+        @keyframes pulseIcon {
+            from { transform: scale(1); }
+            to { transform: scale(1.1); }
+        }
+
+        .choices {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: clamp(1rem, 2vh, 2rem);
+            width: 100%;
+            flex-shrink: 1;
+        }
+
+        .choice-btn {
+            font-size: clamp(2rem, 10vh, 5rem);
+            height: clamp(100px, 18vh, 180px);
+            background: var(--card-bg);
+            color: var(--primary);
+            border: 5px solid var(--primary);
+            border-radius: 30px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .choice-btn.correct { background: var(--success); color: white; border-color: #27ae60; }
+        .choice-btn.wrong { background: var(--danger); color: white; border-color: #c0392b; animation: shake 0.4s; }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+
+        #back-to-setup { 
+            margin-top: 1rem; 
+            background: #666; 
+            font-size: 0.9rem; 
+            padding: 0.6rem 1.5rem;
+            flex-shrink: 0;
+        }
+
+        /* Celebrations */
+        #celebration {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: none;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- Setup Screen -->
+        <div id="setup-screen" class="screen active">
+            <div class="sticky-header">
+                <div class="header-content">
+                    <h1>Letter Lab Setup</h1>
+                    <p>Record sounds & check "In Game" to play!</p>
+                </div>
+                <button id="start-game-btn" disabled>Select at least 2</button>
+            </div>
+            <div class="record-list" id="record-list">
+                <!-- Items generated by JS -->
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <div class="game-layout">
+                <div class="progress-container">
+                    <div id="progress-bar"></div>
+                </div>
+                <div class="game-header">
+                    <div id="feedback-correct" class="feedback-icon">✅</div>
+                    <div id="feedback-wrong" class="feedback-icon">❌</div>
+                </div>
+                <button class="play-sound-btn" id="play-target-btn">🔊</button>
+                <div class="choices" id="choices-grid">
+                    <!-- Choices generated by JS -->
+                </div>
+                <button id="back-to-setup">Back to Setup</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="celebration"></div>
+
+    <script>
+        const DB_NAME = 'LetterLabDB';
+        const STORE_NAME = 'recordings';
+        const SETTINGS_STORE = 'settings';
+        const CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789'.split('');
+        const WIN_SCORE = 10;
+
+        // Flat SVG Icons
+        const ICON_MIC = `<svg viewBox="0 0 24 24"><path d="M12,2A3,3 0 0,1 15,5V11A3,3 0 0,1 12,14A3,3 0 0,1 9,11V5A3,3 0 0,1 12,2M19,11C19,14.53 16.39,17.44 13,17.93V21H11V17.93C7.61,17.44 5,14.53 5,11H7A5,5 0 0,0 12,16A5,5 0 0,0 17,11H19Z"/></svg>`;
+        const ICON_STOP = `<svg viewBox="0 0 24 24"><path d="M18,18H6V6H18V18Z"/></svg>`;
+        const ICON_PLAY = `<svg viewBox="0 0 24 24"><path d="M8,5.14V19.14L19,12.14L8,5.14Z"/></svg>`;
+        const ICON_TRASH = `<svg viewBox="0 0 24 24"><path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19V4M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/></svg>`;
+
+        let db;
+        let recordings = {};
+        let enabledChars = new Set();
+        let mediaRecorder;
+        let audioChunks = [];
+        let currentScore = 0;
+        let targetChar = '';
+        let activeStream = null;
+        let currentlyRecordingChar = null;
+        let isInteractionLocked = false;
+        let currentAudio = null;
+
+        // --- Database Logic ---
+        async function initDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, 2);
+                request.onupgradeneeded = e => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+                    if (!db.objectStoreNames.contains(SETTINGS_STORE)) db.createObjectStore(SETTINGS_STORE);
+                };
+                request.onsuccess = e => {
+                    db = e.target.result;
+                    resolve();
+                };
+                request.onerror = e => reject(e.target.error);
+            });
+        }
+
+        async function saveRecording(char, blob) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                tx.objectStore(STORE_NAME).put(blob, char);
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function deleteRecording(char) {
+            if (!confirm(`Delete recording for "${char}"?`)) return;
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                tx.objectStore(STORE_NAME).delete(char);
+                tx.oncomplete = async () => {
+                    if (recordings[char]) URL.revokeObjectURL(recordings[char]);
+                    delete recordings[char];
+                    enabledChars.delete(char);
+                    await saveSettings();
+                    updateUI();
+                    resolve();
+                };
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function saveSettings() {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(SETTINGS_STORE, 'readwrite');
+                tx.objectStore(SETTINGS_STORE).put(Array.from(enabledChars), 'enabled');
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function loadData() {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction([STORE_NAME, SETTINGS_STORE], 'readonly');
+                const store = tx.objectStore(STORE_NAME);
+                store.getAllKeys().onsuccess = (e) => {
+                    const keys = e.target.result;
+                    keys.forEach(key => {
+                        store.get(key).onsuccess = (ev) => {
+                            recordings[key] = URL.createObjectURL(ev.target.result);
+                            updateUI();
+                        };
+                    });
+                };
+                tx.objectStore(SETTINGS_STORE).get('enabled').onsuccess = (e) => {
+                    if (e.target.result) {
+                        enabledChars = new Set(e.target.result);
+                        updateUI();
+                    }
+                };
+                tx.oncomplete = () => resolve();
+            });
+        }
+
+        // --- UI Logic ---
+        function updateUI() {
+            const pool = getGamePool();
+            const startBtn = document.getElementById('start-game-btn');
+            if (pool.length >= 2) {
+                startBtn.disabled = false;
+                startBtn.innerText = `Start Game (${pool.length} letters)`;
+            } else {
+                startBtn.disabled = true;
+                startBtn.innerText = 'Select at least 2 letters';
+            }
+            CHARS.forEach(char => {
+                const item = document.getElementById(`item-${char}`);
+                if (!item) return;
+                const checkbox = item.querySelector('.enabled-checkbox');
+                if (recordings[char]) {
+                    item.classList.add('recorded');
+                    document.getElementById(`btn-${char}`).innerHTML = ICON_MIC;
+                    checkbox.checked = enabledChars.has(char);
+                } else {
+                    item.classList.remove('recorded');
+                    document.getElementById(`btn-${char}`).innerHTML = ICON_MIC;
+                }
+            });
+        }
+
+        function getGamePool() {
+            return CHARS.filter(char => recordings[char] && enabledChars.has(char));
+        }
+
+        function createSetupItems() {
+            const list = document.getElementById('record-list');
+            list.innerHTML = '';
+            CHARS.forEach(char => {
+                const div = document.createElement('div');
+                div.className = 'record-item';
+                div.id = `item-${char}`;
+                div.innerHTML = `
+                    <span class="char-display">${char}</span>
+                    <button class="record-btn" id="btn-${char}">${ICON_MIC}</button>
+                    <div class="btn-group">
+                        <button class="play-btn">${ICON_PLAY}</button>
+                        <button class="delete-btn">${ICON_TRASH}</button>
+                    </div>
+                    <label class="enabled-toggle">
+                        <input type="checkbox" class="enabled-checkbox"> In Game
+                    </label>
+                `;
+                list.appendChild(div);
+                const recBtn = div.querySelector('.record-btn');
+                const playBtn = div.querySelector('.play-btn');
+                const delBtn = div.querySelector('.delete-btn');
+                const checkbox = div.querySelector('.enabled-checkbox');
+                recBtn.onclick = () => toggleRecording(char);
+                playBtn.onclick = () => playSound(char);
+                delBtn.onclick = () => deleteRecording(char);
+                checkbox.onchange = async () => {
+                    if (checkbox.checked) enabledChars.add(char);
+                    else enabledChars.delete(char);
+                    await saveSettings();
+                    updateUI();
+                };
+            });
+        }
+
+        // --- Audio Logic ---
+        async function getStream() {
+            if (activeStream && activeStream.active) return activeStream;
+            activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            return activeStream;
+        }
+
+        async function toggleRecording(char) {
+            if (currentlyRecordingChar === char) {
+                stopRecording();
+            } else {
+                if (currentlyRecordingChar) stopRecording();
+                startRecording(char);
+            }
+        }
+
+        async function startRecording(char) {
+            try {
+                const stream = await getStream();
+                const mimeType = MediaRecorder.isTypeSupported('audio/webm; codecs=opus') ? 'audio/webm; codecs=opus' : 'audio/mp4';
+                mediaRecorder = new MediaRecorder(stream, { mimeType });
+                audioChunks = [];
+                currentlyRecordingChar = char;
+                mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                mediaRecorder.onstop = async () => {
+                    const blob = new Blob(audioChunks, { type: mimeType });
+                    await saveRecording(char, blob);
+                    if (recordings[char]) URL.revokeObjectURL(recordings[char]);
+                    recordings[char] = URL.createObjectURL(blob);
+                    if (!enabledChars.has(char)) {
+                        enabledChars.add(char);
+                        await saveSettings();
+                    }
+                    updateUI();
+                };
+                mediaRecorder.start();
+                document.getElementById(`item-${char}`).classList.add('recording');
+                document.getElementById(`btn-${char}`).innerHTML = ICON_STOP;
+            } catch (err) {
+                alert('Microphone error: ' + err.message);
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                mediaRecorder.stop();
+                const char = currentlyRecordingChar;
+                document.getElementById(`item-${char}`).classList.remove('recording');
+                document.getElementById(`btn-${char}`).innerHTML = ICON_MIC;
+                currentlyRecordingChar = null;
+            }
+        }
+
+        function playSound(char, onEndCallback) {
+            if (recordings[char]) {
+                if (currentAudio) {
+                    currentAudio.pause();
+                    currentAudio.onended = null;
+                }
+                currentAudio = new Audio(recordings[char]);
+                const playBtn = document.getElementById('play-target-btn');
+                if (playBtn) playBtn.classList.add('playing');
+                
+                currentAudio.onended = () => {
+                    if (playBtn) playBtn.classList.remove('playing');
+                    currentAudio = null;
+                    if (onEndCallback) onEndCallback();
+                };
+                currentAudio.play();
+            }
+        }
+
+        // --- Game Logic ---
+        function startGame() {
+            if (activeStream) {
+                activeStream.getTracks().forEach(track => track.stop());
+                activeStream = null;
+            }
+            document.body.classList.add('playing');
+            currentScore = 0;
+            updateProgress();
+            showScreen('game-screen');
+            nextRound();
+        }
+
+        function nextRound() {
+            isInteractionLocked = false;
+            hideFeedback();
+            const pool = getGamePool();
+            targetChar = pool[Math.floor(Math.random() * pool.length)];
+            
+            let choices = [targetChar];
+            const others = pool.filter(c => c !== targetChar);
+            while (choices.length < Math.min(3, pool.length)) {
+                const rand = others[Math.floor(Math.random() * others.length)];
+                if (!choices.includes(rand)) choices.push(rand);
+            }
+            choices.sort(() => Math.random() - 0.5);
+            
+            const grid = document.getElementById('choices-grid');
+            grid.innerHTML = '';
+            choices.forEach(char => {
+                const btn = document.createElement('button');
+                btn.className = 'choice-btn';
+                btn.innerText = char;
+                btn.onclick = () => handleChoice(char, btn);
+                grid.appendChild(btn);
+            });
+
+            setTimeout(() => playSound(targetChar), 500);
+        }
+
+        function handleChoice(char, btn) {
+            if (isInteractionLocked) return;
+            
+            if (char === targetChar) {
+                isInteractionLocked = true;
+                btn.classList.add('correct');
+                showFeedback('correct');
+                currentScore++;
+                updateProgress();
+                
+                if (currentScore >= WIN_SCORE) {
+                    celebrate();
+                    currentScore = 0;
+                    setTimeout(() => {
+                        updateProgress();
+                        nextRound();
+                    }, 3500);
+                } else {
+                    setTimeout(nextRound, 1500);
+                }
+            } else {
+                btn.classList.add('wrong');
+                showFeedback('wrong');
+                playSound(targetChar); // Repeat sound to help
+                setTimeout(() => {
+                    btn.classList.remove('wrong');
+                    hideFeedback();
+                }, 1000);
+            }
+        }
+
+        function showFeedback(type) {
+            hideFeedback();
+            document.getElementById(`feedback-${type}`).style.display = 'block';
+        }
+
+        function hideFeedback() {
+            document.querySelectorAll('.feedback-icon').forEach(i => i.style.display = 'none');
+        }
+
+        function updateProgress() {
+            const bar = document.getElementById('progress-bar');
+            bar.style.width = (currentScore / WIN_SCORE) * 100 + '%';
+        }
+
+        function playCelebrateSound() {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+            
+            notes.forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                
+                osc.type = 'triangle';
+                osc.frequency.value = freq;
+                
+                gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.1);
+                gain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + i * 0.1 + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + i * 0.1 + 0.4);
+                
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                
+                osc.start(ctx.currentTime + i * 0.1);
+                osc.stop(ctx.currentTime + i * 0.1 + 0.5);
+            });
+        }
+
+        function celebrate() {
+            playCelebrateSound();
+            const container = document.getElementById('celebration');
+            container.style.display = 'block';
+            for (let i = 0; i < 70; i++) {
+                const star = document.createElement('div');
+                star.className = 'star';
+                star.innerText = ['⭐', '🎈', '🎉', '✨', '🍎', '🌈', '🍦', '🍩'][Math.floor(Math.random() * 8)];
+                star.style.left = Math.random() * 100 + 'vw';
+                star.style.top = '-50px';
+                star.style.position = 'absolute';
+                star.style.fontSize = (Math.random() * 2.5 + 1) + 'rem';
+                star.animate([
+                    { transform: 'translateY(0) rotate(0deg)', opacity: 1 },
+                    { transform: `translateY(100vh) rotate(${Math.random() * 720}deg)`, opacity: 0 }
+                ], {
+                    duration: Math.random() * 2000 + 2000,
+                    easing: 'linear'
+                });
+                container.appendChild(star);
+                setTimeout(() => star.remove(), 4000);
+            }
+            setTimeout(() => container.style.display = 'none', 4000);
+        }
+
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+
+        // --- Init ---
+        window.onload = async () => {
+            createSetupItems();
+            await initDB();
+            await loadData();
+            await getStream();
+
+            document.getElementById('start-game-btn').onclick = startGame;
+            document.getElementById('play-target-btn').onclick = () => {
+                if (!isInteractionLocked) playSound(targetChar);
+            };
+            document.getElementById('back-to-setup').onclick = () => {
+                document.body.classList.remove('playing');
+                getStream();
+                showScreen('setup-screen');
+            };
+        };
+    </script>
+</body>
+</html>
